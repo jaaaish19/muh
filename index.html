@@ -1,13 +1,112 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/ai.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Just Another AI Assistant (HuggingFace Transformer.js Demo)</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Study Notes & Browser AI</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 750px; margin: 2rem auto; padding: 0 1rem; background: #121212; color: #e0e0e0; }
+    .controls { display: flex; gap: 10px; margin-bottom: 1rem; flex-wrap: wrap; }
+    select, button, textarea { padding: 10px; border-radius: 6px; border: 1px solid #333; background: #1e1e1e; color: #fff; font-size: 14px; }
+    button { background: #2563eb; border: none; cursor: pointer; font-weight: 600; }
+    button:disabled { background: #444; cursor: not-allowed; }
+    #status { font-size: 13px; color: #aaa; margin-bottom: 1rem; padding: 8px; background: #1a1a1a; border-radius: 6px; }
+    #chat { height: 380px; overflow-y: auto; border: 1px solid #333; border-radius: 8px; padding: 1rem; background: #181818; margin-bottom: 1rem; display: flex; flex-direction: column; gap: 10px; }
+    .msg { padding: 10px 14px; border-radius: 8px; line-height: 1.5; white-space: pre-wrap; }
+    .user { background: #2563eb; align-self: flex-end; max-width: 80%; }
+    .ai { background: #262626; align-self: flex-start; max-width: 85%; }
+    .input-row { display: flex; gap: 10px; }
+    textarea { flex: 1; resize: none; height: 50px; }
+  </style>
+</head>
+<body>
+  <h2>Local Browser AI (Mirror Mode)</h2>
+  <div class="controls">
+    <select id="modelSelect">
+      <option value="Xenova/Phi-3-mini-4k-instruct">Phi-3 Mini 3.8B (Smartest)</option>
+      <option value="HuggingFaceTB/SmolLM2-1.7B-Instruct">SmolLM2 1.7B (Balanced)</option>
+      <option value="HuggingFaceTB/SmolLM2-360M-Instruct">SmolLM2 360M (Low RAM)</option>
+    </select>
+    <select id="mirrorSelect">
+      <option value="https://hf-mirror.com">Mirror 1: hf-mirror.com</option>
+      <option value="https://huggingface.co">Default: huggingface.co</option>
+    </select>
+    <button id="loadBtn">Load AI Model</button>
+  </div>
+  <div id="status">Status: Select a model and click "Load AI Model".</div>
+  <div id="chat"></div>
+  <div class="input-row">
+    <textarea id="prompt" placeholder="Ask a question..." disabled></textarea>
+    <button id="sendBtn" disabled>Send</button>
+  </div>
+
+  <script type="module">
+    import { pipeline, env } from 'https://jsdelivr.net';
+
+    const statusEl = document.getElementById('status');
+    const chatEl = document.getElementById('chat');
+    const loadBtn = document.getElementById('loadBtn');
+    const sendBtn = document.getElementById('sendBtn');
+    const promptEl = document.getElementById('prompt');
+    const modelSelect = document.getElementById('modelSelect');
+    const mirrorSelect = document.getElementById('mirrorSelect');
+
+    let generator = null;
+    let messages = [{ role: 'system', content: 'You are a helpful, concise assistant.' }];
+
+    function addMsg(text, cls) {
+      const div = document.createElement('div');
+      div.className = 'msg ' + cls;
+      div.textContent = text;
+      chatEl.appendChild(div);
+      chatEl.scrollTop = chatEl.scrollHeight;
+      return div;
+    }
+
+    loadBtn.onclick = async () => {
+      loadBtn.disabled = true;
+      env.allowLocalModels = false;
+      env.remoteHost = mirrorSelect.value;
+      const modelId = modelSelect.value;
+
+      statusEl.textContent = `Connecting to ${env.remoteHost} and downloading ${modelId}...`;
+      try {
+        generator = await pipeline('text-generation', modelId, {
+          dtype: 'q4',
+          progress_callback: (p) => {
+            if (p.status === 'progress') {
+              statusEl.textContent = `Downloading ${p.file}: ${Math.round(p.progress)}%`;
+            }
+          }
+        });
+        statusEl.textContent = `Ready! ${modelId} loaded in browser memory.`;
+        promptEl.disabled = false;
+        sendBtn.disabled = false;
+      } catch (err) {
+        statusEl.textContent = `Error: ${err.message}. Try switching the mirror or choosing a smaller model.`;
+        loadBtn.disabled = false;
+      }
+    };
+
+    sendBtn.onclick = async () => {
+      const text = promptEl.value.trim();
+      if (!text || !generator) return;
+      promptEl.value = '';
+      sendBtn.disabled = true;
+      addMsg(text, 'user');
+      messages.push({ role: 'user', content: text });
+
+      const aiDiv = addMsg('Thinking...', 'ai');
+      try {
+        const output = await generator(messages, { max_new_tokens: 350, temperature: 0.7 });
+        const reply = output[0].generated_text.at(-1).content;
+        aiDiv.textContent = reply;
+        messages.push({ role: 'assistant', content: reply });
+      } catch (err) {
+        aiDiv.textContent = `Generation error: ${err.message}`;
+      }
+      sendBtn.disabled = false;
+    };
+  </script>
+</body>
 </html>
